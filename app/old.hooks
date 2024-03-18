@@ -1,0 +1,121 @@
+'use client';
+import React, { useState, useEffect } from 'react';
+import { useContractWrite, usePrepareContractWrite } from 'wagmi';
+import digProtArtifact from './constants/abi';
+import UploadHook from './hooks';
+
+const UploadHook = () => {
+  // Address of the smart contract
+  const contractAddress = '0x90Fe61bd5Dfd441b144dd0ecea036797898d3Fa6';
+
+  // State for the input field
+  const [inputValue, setInputValue] = useState('');
+  const [password, setPassword] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [encryptedCid, setencryptedCid] = useState(false);
+  const [inputBuffer, setInputBuffer] = useState(); // Für die Verarbeitung als ArrayBuffer
+
+  // Prepare contract write operation using wagmi's usePrepareContractWrite hook
+  const { config } = usePrepareContractWrite({
+    address: contractAddress,
+    abi: digProtArtifact.abi,
+    functionName: 'uploadPatientFile',
+    args: [encryptedCid], // Using state as the argument
+  });
+
+  // Hook to execute the write operation
+  const { write } = useContractWrite(config);
+
+  useEffect(() => {
+    // Code, der hier platziert wird, wird ausgeführt, wenn `encryptedCid` oder `write` sich ändern.
+    if (encryptedCid) {
+      write?.();
+    }
+  }, [encryptedCid, write]); // Abhängigkeitsarray
+
+  // Handler for input change event
+  const handleInputChange = (e) => {
+    const inputEncoder = new TextEncoder();
+    const inputBuffer = inputEncoder.encode(e.target.value);
+    setInputBuffer(inputBuffer); // Update the state on input change
+    setInputValue(e.target.value);
+  };
+
+  const handleUploadClick = async () => {
+    setIsModalOpen(true); // Open the modal to ask for passworddas
+  };
+  const handlePasswordChange = (e) => {
+    setPassword(e.target.value); // Update the password state
+  };
+
+  const hashPassword = async (password) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      hashBuffer,
+      { name: 'AES-GCM' },
+      true,
+      ['encrypt', 'decrypt']
+    );
+    console.log(key);
+    return key;
+  };
+
+  // Handler for form submission
+  const handleSubmit = async () => {
+    const passwordKey = await hashPassword(password);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedCID = await crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv, // Verwende den generierten IV
+      },
+      passwordKey,
+      inputBuffer
+    );
+    const ivBase64 = arrayBufferToBase64(iv);
+    const encryptedDataBase64 = arrayBufferToBase64(encryptedCID);
+    console.log(ivBase64);
+    console.log(encryptedDataBase64);
+    console.log(ivBase64 + encryptedDataBase64);
+
+    setencryptedCid(ivBase64 + encryptedDataBase64);
+  };
+
+  function arrayBufferToBase64(buffer) {
+    let binary = '';
+    let bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  return (
+    <div>
+      <input
+        className='customInput'
+        type='text'
+        value={inputValue}
+        onChange={handleInputChange}
+      />
+      <button className='customButton' onClick={handleUploadClick}>
+        Upload
+      </button>
+      {isModalOpen && (
+        <div className='modal'>
+          <input
+            type='password'
+            value={password}
+            onChange={handlePasswordChange}
+          />
+          <button onClick={handleSubmit}>Submit</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default UploadHook;
